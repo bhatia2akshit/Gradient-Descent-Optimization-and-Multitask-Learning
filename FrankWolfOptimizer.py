@@ -19,33 +19,31 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
 
             for p in group['params']:
                 if p.grad is not None:
-                    #                     param_with_grads=p
-                    grads = p.grad  # p.grad should be the list of gradients
 
-                    shared_theta = p[0]
-                    task_theta = p[1:]
+                    grads = p.grad  # p.grad should be the list of gradients
 
                     state = self.state[p]
                     if len(state) == 0:
                         state['step'] = torch.zeros((1,), dtype=torch.float, device=p.device) \
                             if self.defaults['capturable'] else torch.tensor(0.)
-                        state['task_grads'] = task_theta  # represent theta_t
-                        state['task_shared'] = shared_theta  # represent theta_sh
+                        # state['task_grads'] = task_theta  # represent theta_t
+                        state['task_shared'] = p  # represent theta_sh
 
                     # for task in len(range(task_theta)):
                     #     state['task_grads'][task] -= group['lr'] * grads[task+1].data  # step 2 of algorithm 2
 
                     # step 2
-                    state['task_grads'] = torch.sub(state['task_grads'], grads[1:], alpha=group['lr'])
+                    # state['task_grads'] = torch.sub(state['task_grads'], grads[1:], alpha=group['lr'])
 
-                    alpha = self.frank_wolf_solver(task_theta, shared_theta, grads, group['lr'], group['batch_size'],
+                    alpha = self.frank_wolf_solver(state['task_shared'], grads, group['lr'], group['batch_size'],
                                                    group['max_iter'])
 
                     # step 5 is the dot product between alpha tensor and shared_gradient tensor (take all element of
                     # tensor as shared grad
-                    grad_shared = torch.Tensor([grads[0].data]*group['batch_size'])
+                    grad_shared = torch.Tensor([grads]*group['batch_size'])  # ??google p.grad.data vs p.grad??
 
-                    state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'], torch.dot(alpha, grad_shared)))
+                    state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'],
+                                                                                     torch.dot(alpha, grad_shared)))
 
     def frank_wolf_solver(self, task_theta, shared_theta, grads, lr, task_num, max_iter: int):
         """
