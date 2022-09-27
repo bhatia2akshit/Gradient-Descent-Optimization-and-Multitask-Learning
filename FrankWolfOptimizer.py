@@ -20,14 +20,14 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             for p in group['params']:
                 if p.grad is not None:
 
-                    grads = p.grad  # p.grad should be the list of gradients
+                    grads = p.grad  # shape: [T,shape of parameters]
 
                     state = self.state[p]
                     if len(state) == 0:
                         state['step'] = torch.zeros((1,), dtype=torch.float, device=p.device) \
                             if self.defaults['capturable'] else torch.tensor(0.)
                         # state['task_grads'] = task_theta  # represent theta_t
-                        state['task_shared'] = p  # represent theta_sh
+                        state['task_shared'] = p  # represent theta_sh, shape: [layers_num, neuron in each layer]
 
                     # for task in len(range(task_theta)):
                     #     state['task_grads'][task] -= group['lr'] * grads[task+1].data  # step 2 of algorithm 2
@@ -35,8 +35,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
                     # step 2
                     # state['task_grads'] = torch.sub(state['task_grads'], grads[1:], alpha=group['lr'])
 
-                    alpha = self.frank_wolf_solver(state['task_shared'], grads, group['lr'], group['batch_size'],
-                                                   group['max_iter'])
+                    alpha = self.frank_wolf_solver(grads, group)
 
                     # step 5 is the dot product between alpha tensor and shared_gradient tensor (take all element of
                     # tensor as shared grad
@@ -45,59 +44,62 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
                     state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'],
                                                                                      torch.dot(alpha, grad_shared)))
 
-    def frank_wolf_solver(self, task_theta, shared_theta, grads, lr, task_num, max_iter: int):
+    def frank_wolf_solver(self, grads, group_param: dict):
         """
-
         Args:
-            task_theta: tensor of task specific parameters
-            shared_theta: 0d tensor of  shared task parameter
-            grads: 0th index is tensor of gradient wrt shared task parameter and other indices are tensors of gradients
-            wrt each task parameter
-            lr: learning rate
-            task_num: number of tasks
-            max_iter: total number of iterations after which solver would stop
+            grads: list with each element represent grads of parameters for a mini batch.
+            group_param: dictionary from which learning rate, number of tasks and total number of iterations extracted.
 
         Returns:
-            Tensor of t-dimensional representing alpha, with t being the number of tasks
+            Tensor of t-dimensional representing alpha, with t being the number of tasks.
         """
-        alpha = torch.ones(task_num)
-        alpha = torch.div(alpha, 1 / task_num)
+
+        lr = group_param['lr']
+        task_num = group_param['batch_size']
+        max_iter = group_param['max_iter']
+        alpha = torch.ones(task_num)  # shape [1,T]
+        alpha = torch.div(alpha, 1 / task_num)  # step 7 of algorithm 2.
         m = list()
 
-        for grad_1 in grads[1:]:
-            m.append(torch.mul(grad_1, grads[1:]))
-        M = torch.stack(m)  # step 8
+        # for index_i in range(task_num-1):
+        #     m.append(torch.mul(grads[index_i], grads[(index_i+1):]))
+        #
+        # M = torch.stack(m)  # step 8
 
-        minimum_tensor = torch.kthvalue(grads[1:], 1)
+        # after expanding step 10
+        gdash = torch.dot(alpha, grads)  # dot product alpha with theta.grad
+        t = torch.dot(grads, gdash)  # shape [1,T]
+
+        minimum_tensor = torch.kthvalue(t, 1)  # step 10
         gamma_chosen = 1000
         count_iter = 0
         while gamma_chosen > 0.1 or count_iter < max_iter:
-            t_chosen = minimum_tensor.indices.item()  # step 10
-            theta_dash = torch.dot(alpha, grads[1:])
-            theta = grads[t_chosen + 1]  # plus 1 because, grads[0] is gradient for shared parameter
+            t_chosen = minimum_tensor.indices.item()  # step 10, getting the index from kthvalue method.
+            theta_dash = torch.dot(alpha, grads)
+            theta = grads[t_chosen]
             gamma_t = self.find_gamma(theta_dash, theta)
             tmp = torch.sum(torch.mul(1 - gamma_t, theta_dash), torch.mul(theta, gamma_t))
 
-            gamma_chosen = torch.square(tmp, tmp)  # step 11
+            gamma_chosen = torch.square(tmp)  # refer to expansion of step 11
             unit_chosen = torch.zeros(size=task_num)
             unit_chosen[t_chosen] = 1
-            alpha = torch.sum(torch.mul(alpha, torch.sub(1, gamma_chosen)), torch.mul((gamma_chosen, unit_chosen)))
+            alpha = torch.sum(torch.mul(alpha, (1-gamma_chosen)), torch.mul((gamma_chosen, unit_chosen)))
 
         return alpha
 
-    def find_gamma(self, theta_dash, theta):
+    def find_gamma(self, theta_dash: torch.tensor, theta: torch.tensor):
         """
         Args:
-            theta_dash: tensor 0d
-            theta: tensor 0d
+            theta_dash: tensor [1,shape of neural network]
+            theta: tensor [shape of neural network]
 
         Returns:
             0d tensor
         """
-        if torch.mul(theta, theta_dash) >= torch.mul(theta, theta):
+        if torch.dot(torch.transpose(theta), theta_dash) >= torch.dot(torch.transpose(theta), theta):
             return 1
-        elif torch.mul(theta, theta_dash) >= torch.mul(theta_dash, theta_dash):
+        elif torch.dot(torch.transpose(theta), theta_dash) >= torch.mul(torch.transpose(theta_dash), theta_dash):
             return 0
         else:
-            return torch.div(torch.mul(torch.sub(theta_dash, theta), theta_dash),
+            return torch.div(torch.mul(torch.transpose(torch.sub(theta_dash, theta)), theta_dash),
                              torch.square(torch.sub(theta, theta_dash)))
