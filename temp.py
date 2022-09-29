@@ -70,6 +70,7 @@ def train(dataloader, model, loss_fn, optimizer):
     # optimizer.zero_grad()
     for batch, (X, y) in enumerate(dataloader):
         # one X is a batch of 8 instances
+        print('batch number: ', batch)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         X, y = X.to(device), y.to(device)
 

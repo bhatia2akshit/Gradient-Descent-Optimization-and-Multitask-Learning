@@ -36,12 +36,10 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
                     task_grads.append(p.grad)
                     task_theta.append(p)
 
-            tensor_theta = torch.Tensor(task_theta)
-            tensor_grads = torch.Tensor(task_grads)
 
-            self.task_theta.append(tensor_grads)
-            self.task_grads.append(tensor_theta
-                                   )
+
+            self.task_theta.append(task_grads)
+            self.task_grads.append(task_theta)
             # if len(self.task_list) == 0:
             #     self.task_list.append(task_dict)
 
@@ -79,7 +77,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         lr = self.param_groups[0]['lr']
         task_num = self.param_groups[0]['batch_size']
         max_iter = self.param_groups[0]['max_iter']
-        grads = self.task_grads  # each element contains grads for 1
+        grads = self.task_grads  # each element contains all grads for every layer for each mini batch
 
         alpha = torch.ones(task_num)  # shape [1,T]
         alpha = torch.div(alpha, task_num)  # step 7 of algorithm 2.
@@ -91,15 +89,27 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         # M = torch.stack(m)  # step 8
 
         # after expanding step 10
-        gdash = torch.mul(alpha, grads)  # dot product alpha with theta.grad
-        t = torch.dot(grads, gdash)  # shape [1,T]
+        gdash = {}  # torch.dot(alpha.T, torch.Tensor(grads))  # dot product alpha with theta.grad
 
-        minimum_tensor = torch.kthvalue(t, 1)  # step 10
+        for index in range(task_num):
+            for index_grad in range(len(grads[index])):
+                if gdash.__contains__(index_grad):
+                    gdash[index_grad] += torch.mul(alpha[index], grads[index][index_grad])
+                else:
+                    gdash[index_grad] = torch.mul(alpha[index], grads[index][index_grad])
+
+        task_t = []
+        # there are task_num number of gradients in grads list. But gdash only has as many elements as there are layers.
+        for index_task in range(task_num):
+            for index_grad in range(len(gdash)):
+                task_t.append(torch.matmul(grads[index_task][index_grad].T, gdash[index_grad]))  # shape [1,T]
+
+        minimum_tensor = torch.kthvalue(task_t, 1)  # step 10
         gamma_chosen = 1000
         count_iter = 0
         while gamma_chosen > 0.1 or count_iter < max_iter:
             t_chosen = minimum_tensor.indices.item()  # step 10, getting the index from kthvalue method.
-            theta_dash = torch.dot(alpha, grads)
+            theta_dash = torch.dot(alpha, torch.Tensor(grads))
             theta = grads[t_chosen]
             gamma_t = self.find_gamma(theta_dash, theta)
             tmp = torch.sum(torch.mul(1 - gamma_t, theta_dash), torch.mul(theta, gamma_t))
