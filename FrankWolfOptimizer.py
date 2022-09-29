@@ -3,13 +3,16 @@ import torch
 
 
 class FrankWolfOptimizer(torch.optim.Optimizer):
-    def __init__(self, params: list, lr=1e-3, batch_size=1):
+    def __init__(self, params, lr=1e-3, batch_size=1, max_iter=10):
         """
             params: list of parameters that are updated (usually a list of tensor objects is given)
         """
         if lr < 0:
             raise ValueError('lr must be greater than or equal to 0.')
-        defaults = dict(lr=lr, batch_size=batch_size)
+        defaults = dict(lr=lr, batch_size=batch_size, max_iter=max_iter)
+        # self.task_list = []
+        self.task_theta = []
+        self.task_grads = []
         super(FrankWolfOptimizer, self).__init__(params, defaults)
 
     def step(self, closure=None):
@@ -17,17 +20,36 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             params_with_grad = []  # represents the theta, [theta_sh, theta_1,...theta_M] where M is the number of
             # mini-batches
 
+            # task_dict = {}
+            # task_num = len(self.task_list)
+            # task_dict['task_num'] = task_num + 1  # increment the task id
+            # task_dict['theta'] = []
+            # task_dict['grads'] = []
+            task_theta=[]
+            task_grads=[]
             for p in group['params']:
                 if p.grad is not None:
 
                     grads = p.grad  # shape: [T,shape of parameters]
+                    # self.task_dict['theta'].append(p)
+                    # task_dict['grads'].append(p.grad)
+                    task_grads.append(p.grad)
+                    task_theta.append(p)
 
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state['step'] = torch.zeros((1,), dtype=torch.float, device=p.device) \
-                            if self.defaults['capturable'] else torch.tensor(0.)
-                        # state['task_grads'] = task_theta  # represent theta_t
-                        state['task_shared'] = p  # represent theta_sh, shape: [layers_num, neuron in each layer]
+            tensor_theta = torch.Tensor(task_theta)
+            tensor_grads = torch.Tensor(task_grads)
+
+            self.task_theta.append(tensor_grads)
+            self.task_grads.append(tensor_theta
+                                   )
+            # if len(self.task_list) == 0:
+            #     self.task_list.append(task_dict)
+
+                    # state = self.state[p]
+                    # if len(state) == 0:
+                    #     state['step'] = torch.tensor(0.)
+                    #     # state['task_grads'] = task_theta  # represent theta_t
+                    #     state['task_shared'] = p  # represent theta_sh, shape: [layers_num, neuron in each layer]
 
                     # for task in len(range(task_theta)):
                     #     state['task_grads'][task] -= group['lr'] * grads[task+1].data  # step 2 of algorithm 2
@@ -35,16 +57,16 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
                     # step 2
                     # state['task_grads'] = torch.sub(state['task_grads'], grads[1:], alpha=group['lr'])
 
-                    alpha = self.frank_wolf_solver(grads, group)
+                    # alpha = self.frank_wolf_solver(grads, group)
 
                     # step 5 is the dot product between alpha tensor and shared_gradient tensor (take all element of
                     # tensor as shared grad
-                    grad_shared = torch.Tensor([grads]*group['batch_size'])  # ??google p.grad.data vs p.grad??
+                    # grad_shared = torch.Tensor([grads]*group['batch_size'])  # ??google p.grad.data vs p.grad??
+                    #
+                    # state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'],
+                    #                                                                  torch.dot(alpha, grad_shared)))
 
-                    state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'],
-                                                                                     torch.dot(alpha, grad_shared)))
-
-    def frank_wolf_solver(self, grads, group_param: dict):
+    def frank_wolf_solver(self):
         """
         Args:
             grads: list with each element represent grads of parameters for a mini batch.
@@ -54,11 +76,13 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             Tensor of t-dimensional representing alpha, with t being the number of tasks.
         """
 
-        lr = group_param['lr']
-        task_num = group_param['batch_size']
-        max_iter = group_param['max_iter']
+        lr = self.param_groups[0]['lr']
+        task_num = self.param_groups[0]['batch_size']
+        max_iter = self.param_groups[0]['max_iter']
+        grads = self.task_grads  # each element contains grads for 1
+
         alpha = torch.ones(task_num)  # shape [1,T]
-        alpha = torch.div(alpha, 1 / task_num)  # step 7 of algorithm 2.
+        alpha = torch.div(alpha, task_num)  # step 7 of algorithm 2.
         m = list()
 
         # for index_i in range(task_num-1):
@@ -67,7 +91,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         # M = torch.stack(m)  # step 8
 
         # after expanding step 10
-        gdash = torch.dot(alpha, grads)  # dot product alpha with theta.grad
+        gdash = torch.mul(alpha, grads)  # dot product alpha with theta.grad
         t = torch.dot(grads, gdash)  # shape [1,T]
 
         minimum_tensor = torch.kthvalue(t, 1)  # step 10
