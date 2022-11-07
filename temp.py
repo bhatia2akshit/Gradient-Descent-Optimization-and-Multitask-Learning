@@ -1,24 +1,27 @@
 import torch
-import numpy as np
-import torchvision.datasets
 import torch.utils.data
 import torchvision
-from torchvision import datasets
 from torchvision.transforms import ToTensor
 import torch.nn as nn
-from torch.autograd import Function
-from FrankWolfOptimizer import FrankWolfOptimizer
+import math
+from FrankWolfOptimizer_new import FrankWolfOptimizer
 
 image_data_train = torchvision.datasets.MNIST(root='./',train=True,download=True,transform=ToTensor())
 image_data_test = torchvision.datasets.MNIST(root='./',train=False,download=True,transform=ToTensor())
 
+image_data_train_reshaped=image_data_train.data.reshape(image_data_train.data.shape[0],28*28)
+image_data_test_reshaped=image_data_test.data.reshape(image_data_test.data.shape[0],28*28)
+
+batch_size = 64
+num_batches = math.ceil(len(image_data_train)/batch_size)
+
 data_loader_train = torch.utils.data.DataLoader(image_data_train,
-                                          batch_size=8,
+                                          batch_size=batch_size,
                                           shuffle=True,
                                           )
 
 data_loader_test = torch.utils.data.DataLoader(image_data_test,
-                                          batch_size=8,
+                                          batch_size=batch_size,
                                           shuffle=True,
                                           )
 
@@ -38,11 +41,11 @@ class NeuralNetwork(nn.Module):
         super(NeuralNetwork, self).__init__()
         self.flatten = nn.Flatten()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28 * 28, 512),
+            nn.Linear(28 * 28, 128),
             nn.ReLU(),
-            nn.Linear(512, 512),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(512, 10)
+            nn.Linear(64, 10)
         )
 
     def forward(self, x):
@@ -57,46 +60,36 @@ modl = NeuralNetwork(inpsiz, hidensiz, numclases)
 loss = nn.CrossEntropyLoss()
 # create DFW optimizer with learning rate of 0.1
 # optim = DFW(modl.parameters(), eta=0.1)
-optim = FrankWolfOptimizer(modl.parameters(), lr=1e-3, batch_size=7500, max_iter=30)
+
+optim = FrankWolfOptimizer(modl.parameters(), lr=1e-3, batch_size=num_batches, max_iter=30)  # ?? look ath this bro!
 
 
 # mini training on batches for normal pytorch mnist setup
 def train(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
     model.train()
+    if len(optimizer.task_theta) > 0:
+        optimizer.task_theta = []
+        optimizer.task_grads = []
 
     loss_list = []
 
     # optimizer.zero_grad()
-    for batch, (X, y) in enumerate(dataloader):
+    for batch, (X,y) in enumerate(dataloader):
         # one X is a batch of 8 instances
-        print('batch number: ', batch)
+        # print('batch number: ', batch)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         X, y = X.to(device), y.to(device)
-
+        X = X.reshape(X.shape[0], 28*28)
         # Compute prediction error
         pred = model(X)
 
         loss_value = loss_fn(pred, y)
         loss_value.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        # loss_list.append(loss)
+        optimizer.step()  # it appends gradients to theta parameter but doesn't call frankwolf method.
 
-
-    # call frankwolfe method to compute combined gradient
+    # call frankwolf method to compute combined gradient
     optimizer.frank_wolf_solver()
-
-
-    # loss_tensor = torch.Tensor(loss_list)
-
-    # loss_tensor.backward()
-
-
-        # print(loss)
-        # print(loss.T)
-        # loss, current = loss.item(), batch * len(X)
-        # print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
 def test(dataloader, model, loss_fn):
@@ -117,7 +110,9 @@ def test(dataloader, model, loss_fn):
 
 epochs = 5
 for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
+    # print(f"Epoch {t+1}\n-------------------------------")
     train(data_loader_train, modl, loss, optim)
     test(data_loader_test, modl, loss)
-print("Done!")
+
+    print('an epoch is completed')
+# print("Done!")

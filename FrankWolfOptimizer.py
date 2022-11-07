@@ -40,29 +40,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
 
             self.task_theta.append(task_grads)
             self.task_grads.append(task_theta)
-            # if len(self.task_list) == 0:
-            #     self.task_list.append(task_dict)
 
-                    # state = self.state[p]
-                    # if len(state) == 0:
-                    #     state['step'] = torch.tensor(0.)
-                    #     # state['task_grads'] = task_theta  # represent theta_t
-                    #     state['task_shared'] = p  # represent theta_sh, shape: [layers_num, neuron in each layer]
-
-                    # for task in len(range(task_theta)):
-                    #     state['task_grads'][task] -= group['lr'] * grads[task+1].data  # step 2 of algorithm 2
-
-                    # step 2
-                    # state['task_grads'] = torch.sub(state['task_grads'], grads[1:], alpha=group['lr'])
-
-                    # alpha = self.frank_wolf_solver(grads, group)
-
-                    # step 5 is the dot product between alpha tensor and shared_gradient tensor (take all element of
-                    # tensor as shared grad
-                    # grad_shared = torch.Tensor([grads]*group['batch_size'])  # ??google p.grad.data vs p.grad??
-                    #
-                    # state['task_shared'] = torch.sub(state['task_shared'], torch.mul(group['lr'],
-                    #                                                                  torch.dot(alpha, grad_shared)))
 
     def frank_wolf_solver(self):
         """
@@ -89,7 +67,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         # M = torch.stack(m)  # step 8
 
         # after expanding step 10
-        gdash = {}  # torch.dot(alpha.T, torch.Tensor(grads))  # dot product alpha with theta.grad
+        gdash = {}
 
         for index in range(task_num):
             for index_grad in range(len(grads[index])):
@@ -111,7 +89,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             t_chosen = minimum_tensor.indices.item()  # step 10, getting the index from kthvalue method.
             theta_dash = torch.dot(alpha, torch.Tensor(grads))
             theta = grads[t_chosen]
-            gamma_t = self.find_gamma(theta_dash, theta)
+            gamma_t = self.find_gamma(theta_dash, theta)  # step 11
             tmp = torch.sum(torch.mul(1 - gamma_t, theta_dash), torch.mul(theta, gamma_t))
 
             gamma_chosen = torch.square(tmp)  # refer to expansion of step 11
