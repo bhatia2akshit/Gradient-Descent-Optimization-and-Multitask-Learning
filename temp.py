@@ -12,7 +12,7 @@ image_data_test = torchvision.datasets.MNIST(root='./',train=False,download=True
 image_data_train_reshaped=image_data_train.data.reshape(image_data_train.data.shape[0],28*28)
 image_data_test_reshaped=image_data_test.data.reshape(image_data_test.data.shape[0],28*28)
 
-batch_size = 64
+batch_size = 1024
 num_batches = math.ceil(len(image_data_train)/batch_size)
 
 data_loader_train = torch.utils.data.DataLoader(image_data_train,
@@ -41,11 +41,11 @@ class NeuralNetwork(nn.Module):
         super(NeuralNetwork, self).__init__()
         self.flatten = nn.Flatten()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28 * 28, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 10)
+            nn.Linear(28 * 28, 10),
+            # nn.ReLU(),
+            # nn.Linear(128, 64),
+            # nn.ReLU(),
+            # nn.Linear(64, 10)
         )
 
     def forward(self, x):

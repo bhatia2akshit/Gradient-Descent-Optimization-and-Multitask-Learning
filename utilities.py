@@ -71,7 +71,9 @@ def product_grads(g_list: list, gdash_list: list) -> float:
     for index_layer in range(len(gdash_list)):
         g = g_list[index_layer]
         gdash = gdash_list[index_layer]
-        sum1 += torch.matmul(torch.flatten(g).T, torch.flatten(gdash))
+        # sum1 += torch.matmul(torch.flatten(g).T, torch.flatten(gdash)).item()
+        sum1 += torch.flatten(g) @ torch.flatten(gdash)
+        # sum1 += product.item()
 
     return sum1
 
