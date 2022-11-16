@@ -41,11 +41,11 @@ class NeuralNetwork(nn.Module):
         super(NeuralNetwork, self).__init__()
         self.flatten = nn.Flatten()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28 * 28, 10),
-            # nn.ReLU(),
-            # nn.Linear(128, 64),
-            # nn.ReLU(),
-            # nn.Linear(64, 10)
+            nn.Linear(28 * 28, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 10)
         )
 
     def forward(self, x):
@@ -66,16 +66,13 @@ optim = FrankWolfOptimizer(modl.parameters(), lr=1e-3, batch_size=num_batches, m
 
 # mini training on batches for normal pytorch mnist setup
 def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
     model.train()
-    if len(optimizer.task_theta) > 0:
-        optimizer.task_theta = []
+    if len(optimizer.task_grads) > 0:
+        # optimizer.task_theta = []
         optimizer.task_grads = []
 
-    loss_list = []
-
     # optimizer.zero_grad()
-    for batch, (X,y) in enumerate(dataloader):
+    for batch, (X, y) in enumerate(dataloader):
         # one X is a batch of 8 instances
         # print('batch number: ', batch)
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -86,10 +83,10 @@ def train(dataloader, model, loss_fn, optimizer):
 
         loss_value = loss_fn(pred, y)
         loss_value.backward()
-        optimizer.step()  # it appends gradients to theta parameter but doesn't call frankwolf method.
-
+        optimizer.collect_grads()  # it appends gradients to theta parameter but doesn't call frankwolf method.
+        optimizer.zero_grad()
     # call frankwolf method to compute combined gradient
-    optimizer.frank_wolf_solver()
+    optimizer.step()
 
 
 def test(dataloader, model, loss_fn):

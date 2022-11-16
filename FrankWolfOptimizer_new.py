@@ -2,6 +2,7 @@
 import torch
 import utilities
 
+
 class FrankWolfOptimizer(torch.optim.Optimizer):
     def __init__(self, params, lr=1e-3, batch_size=1, max_iter=10):
         """
@@ -12,24 +13,24 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             raise ValueError('lr must be greater than or equal to 0.')
         defaults = dict(lr=lr, batch_size=batch_size, max_iter=max_iter)
         # self.task_list = []
-        self.task_theta = []
+        # self.task_theta = []
         self.task_grads = []
         super(FrankWolfOptimizer, self).__init__(params, defaults)
 
-    def step(self, closure=None):  # look at the changing of name
+    def collect_grads(self):  # look at the changing of name
         for group in self.param_groups:
-            task_theta = []
+            # task_theta = []
             task_grads = []
             for p in group['params']:
                 # each p represents the tensor object of one layer
                 if p.grad is not None:  # shape: [T,shape of parameters]
                     task_grads.append(p.grad.clone())
-                    task_theta.append(p)
+                    # task_theta.append(p)
 
-            self.task_theta.append(task_theta)
+            # self.task_theta.append(task_theta)
             self.task_grads.append(task_grads)
 
-    def frank_wolf_solver(self):
+    def step(self, closure=None):
         """
         Compute FrankWolf Solver as referenced in Algorithm 2.
 
