@@ -10,10 +10,10 @@ from FrankWolfOptimizer import FrankWolfOptimizer
 image_data_train = torchvision.datasets.MNIST(root='./',train=True,download=True,transform=ToTensor())
 image_data_test = torchvision.datasets.MNIST(root='./',train=False,download=True,transform=ToTensor())
 
-image_data_train_reshaped=image_data_train.data.reshape(image_data_train.data.shape[0],28*28)
-image_data_test_reshaped=image_data_test.data.reshape(image_data_test.data.shape[0],28*28)
+image_data_train_reshaped = image_data_train.data.reshape(image_data_train.data.shape[0],28*28)
+image_data_test_reshaped = image_data_test.data.reshape(image_data_test.data.shape[0],28*28)
 
-batch_size = 1024
+batch_size = 6000
 batch_count = math.ceil(len(image_data_train)/batch_size)
 
 data_loader_train = torch.utils.data.DataLoader(image_data_train,
@@ -45,11 +45,6 @@ class NeuralNetwork(nn.Module):
         return logits
 
 
-modl = NeuralNetwork()
-loss = nn.CrossEntropyLoss()
-
-optim = FrankWolfOptimizer(modl.parameters(), lr=0.1, batch_count=batch_count, batch_size=batch_size, max_iter=30)
-
 # mini training on batches for normal pytorch mnist setup
 def train(dataloader, model, loss_fn, optimizer):
     model.train()
@@ -65,29 +60,17 @@ def train(dataloader, model, loss_fn, optimizer):
         X, y = X.to(device), y.to(device)
         X = X.reshape(X.shape[0], 28*28)
         # Compute prediction error
+
         pred = model(X)
 
         loss_value = loss_fn(pred, y)
         # print(f'loss during training is: {loss_value}')
+        # loss_value.retain_grad()
         loss_value.backward()
         optimizer.collect_grads()  # it appends gradients to theta parameter but doesn't call frankwolf method.
         optimizer.zero_grad()
-    # call frankwolf method to compute combined gradient
-    # alpha = optimizer.frankwolfsolver()
-    optimizer.step()
 
-    # # update the parameters of the model batch by batch.
-    # for batch, (X, y) in enumerate(dataloader):
-    #     # one X is a batch of 8 instances
-    #     device = "cuda" if torch.cuda.is_available() else "cpu"
-    #     X, y = X.to(device), y.to(device)
-    #     X = X.reshape(X.shape[0], 28*28)
-    #     # Compute prediction error
-    #     model(X)  # find the parameters of the model
-    #     optimizer.step()  # updates the model parameters
-    #     optimizer.batch_num += 1  # keeps track of the batch for model parameters updation.
-    #
-    # optimizer.step()
+    optimizer.step()
     print('epoch training ends')
 
 
@@ -107,12 +90,18 @@ def test(dataloader, model, loss_fn):
     correct /= size
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
-
-epochs = 50
-for t in range(epochs):
-    # print(f"Epoch {t+1}\n-------------------------------")
-    train(data_loader_train, modl, loss, optim)
-    test(data_loader_test, modl, loss)
-
-    print('an epoch is completed')
 # print("Done!")
+
+def main():
+    modl = NeuralNetwork()
+    loss = nn.CrossEntropyLoss()
+    optim = FrankWolfOptimizer(modl.parameters(), lr=0.1, batch_count=batch_count, batch_size=batch_size, max_iter=30)
+    epochs = 50
+    for t in range(epochs):
+        # print(f"Epoch {t+1}\n-------------------------------")
+        train(data_loader_train, modl, loss, optim)
+        test(data_loader_test, modl, loss)
+
+        print('an epoch is completed')
+
+main()

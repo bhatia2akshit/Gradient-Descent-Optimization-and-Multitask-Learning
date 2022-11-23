@@ -54,9 +54,8 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
 
 
         for index in range(len(self.param_groups[0]['params'])):
-
-            self.param_groups[0]['params'][index] = torch.sub(self.param_groups[0]['params'][index],
-                                                              update_values[index])
+            tmp=self.param_groups[0]['params'][index].data
+            self.param_groups[0]['params'][index].data = torch.sub(tmp, update_values[index])
 
     def frankwolfsolver(self) -> torch.tensor:
         """
