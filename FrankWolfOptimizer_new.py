@@ -13,21 +13,21 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             raise ValueError('lr must be greater than or equal to 0.')
         defaults = dict(lr=lr, batch_size=batch_size, max_iter=max_iter)
         # self.task_list = []
-        # self.task_theta = []
+        self.task_theta = []
         self.task_grads = []
         super(FrankWolfOptimizer, self).__init__(params, defaults)
 
     def collect_grads(self):  # look at the changing of name
         for group in self.param_groups:
-            # task_theta = []
+            task_theta = []
             task_grads = []
             for p in group['params']:
                 # each p represents the tensor object of one layer
                 if p.grad is not None:  # shape: [T,shape of parameters]
                     task_grads.append(p.grad.clone())
-                    # task_theta.append(p)
+                    task_theta.append(p.clone())
 
-            # self.task_theta.append(task_theta)
+            self.task_theta.append(task_theta)
             self.task_grads.append(task_grads)
 
     def step(self, closure=None):
@@ -39,6 +39,14 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         """
 
         lr = self.param_groups[0]['lr']
+        task_num = self.param_groups[0]['batch_size']
+        alpha = self.frankwolfsolver()
+        gdash_layered_list = utilities.aggregated_scaler_product(self.task_grads, alpha)
+        for task in range(task_num):  # step 5 of algorithm 2.
+            self.task_theta[task] = utilities.subtract_list_tensors(self.task_theta[task],
+                                                                    utilities.scaler_product(gdash_layered_list, lr))
+
+    def frankwolfsolver(self):
         task_num = self.param_groups[0]['batch_size']
         max_iter = self.param_groups[0]['max_iter']
         grads_tasks_list = self.task_grads  # each element contains all grads for every layer for each mini batch
@@ -68,15 +76,11 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
             g_list_chosen = grads_tasks_list[t_chosen]  # this g is for a particular task, chosen by t_chosen
             calculated_gamma = utilities.find_gamma(gdash_layered_list, g_list_chosen)  # step 11
 
-            # do a scaler product between gamma and gdash
-            # scaled_product = utilities.scaler_product(gdash_layered_list, gamma_t)
             # step 11 ends here
-            # calculated_gamma = utilities.product_grads(scaled_product, scaled_product)  # not sure if this works
             if calculated_gamma <= 0.0001:
                 return alpha
-            print(f'the current value of calculated gamma is: {calculated_gamma}')
+
             alpha = torch.mul(alpha, (1 - calculated_gamma))  # step 12 first part
             alpha[t_chosen] += calculated_gamma  # step 12 second part
 
-        print(f'the current value of gamma is: {calculated_gamma}')
         return alpha

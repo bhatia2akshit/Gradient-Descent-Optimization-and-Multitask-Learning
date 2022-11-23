@@ -1,35 +1,37 @@
 import torch
 
 
-def aggregated_scaler_product(list1: list, list2: torch.tensor) -> list:
+def sum_scaled_product(grads_all_tasks: list, weight_tensor: torch.tensor) -> list:
     """
     Returns the aggregated sum of multiplication of an element of list1 with the element of list2.
     Used in step 10 and step 11 of expansion algor 2 of paper 1.
 
     :math:`\\sum_{t=1}^T\\alpha^t*g\_list^t`
 
-
     Args:
-        list1: each element of the list represents the list of n elements. In algo 2, g_list is list1.
-        list2: list with the length same as list1. In algo 2, alpha is list2.
+        grads_all_tasks: each element of the list represents a layer in the neural network. (g_list in algo 2 expanded.)
+        weight_tensor: list value where each element is multiplied element wise to grads of each task.
 
     Returns:
         a list object with as many indexes as there are layers in the network.
     """
 
     gdash_dict = dict()
-    for task_index in range(len(list1)):
-        product_list = scaler_product(list1[task_index], list2[task_index])
-        for layer in range(len(product_list)):
-            if gdash_dict.__contains__(layer):
-                gdash_dict[layer] += product_list[layer]
+    layer_num = grads_all_tasks[0]
+
+    for layer_index in range(len(layer_num)):
+        for task_index in range(len(grads_all_tasks)):
+            grads_list = grads_all_tasks[task_index]
+            gdash_element = torch.mul(grads_list[layer_index], weight_tensor[task_index])
+            if gdash_dict.__contains__(layer_index):
+                torch.add(gdash_element, gdash_dict[layer_index], out=gdash_dict[layer_index])
             else:
-                gdash_dict[layer] = product_list[layer]
+                gdash_dict[layer_index] = gdash_element
 
     return list(gdash_dict.values())
 
 
-def scaler_product(grad_list: list, alpha: float) -> list:
+def scaler_product(grads_layered_list: list, weight_float: float) -> list:
     """
     Returns the multiplication of alpha with gradients.
     Used in step 10 and step 11 of algor 2 of paper 1.
@@ -38,18 +40,23 @@ def scaler_product(grad_list: list, alpha: float) -> list:
 
 
     Args:
-        grad_list: each index of the list represents the layer, and the value is the tensor for that layer.
-        alpha: refer to algorithm 2, step 7.
+        grads_layered_list: each element of the list represents a layer in the neural network.
+        weight_float: float value multiplied element wise to grads_layered_list.
 
     Returns:
         a list object with as many indexes as there are layers in the network.
     """
 
-    product_list = list()
-    for layer_index in range(len(grad_list)):
-        product_list.append(torch.mul(alpha, grad_list[layer_index]))
+    gdash_dict = dict()
 
-    return product_list
+    for layer_index in range(len(grads_layered_list)):
+        gdash_element_layered = torch.mul(grads_layered_list[layer_index], weight_float)
+        if gdash_dict.__contains__(layer_index):
+            torch.add(gdash_element_layered, gdash_dict[layer_index], out=gdash_dict[layer_index])
+        else:
+            gdash_dict[layer_index] = gdash_element_layered
+
+    return list(gdash_dict.values())
 
 
 def product_grads(g_list: list, gdash_list: list) -> float:

@@ -1,117 +1,105 @@
 # writing optimizer method suitable for pytorch
 import torch
+import utilities
 
 
 class FrankWolfOptimizer(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3, batch_size=1, max_iter=10):
+    def __init__(self, params, lr=1e-3, batch_count=1, batch_size=8, max_iter=10, ):
         """
             params: list of parameters that are updated (usually a list of tensor objects is given)
+            lr: float: learning rate
+            batch_count: int: number of batches (tasks)
+            batch_size: int: number of instances in a batch (task)
+            max_iter: int: total number of iterations after which FrankWolfe method is stopped.
         """
+
         if lr < 0:
             raise ValueError('lr must be greater than or equal to 0.')
-        defaults = dict(lr=lr, batch_size=batch_size, max_iter=max_iter)
-        # self.task_list = []
+        defaults = dict(lr=lr, max_iter=max_iter)
+
         self.task_theta = []
-        self.task_grads = []
+        self.grads_all_tasks = []
+        self.alpha = []
+        self.batch_count = batch_count
+        self.batch_size = batch_size
+        self.batch_counter = 0  # keeps track of which batch is it.
+
         super(FrankWolfOptimizer, self).__init__(params, defaults)
 
-    def step(self, closure=None):
+    def collect_grads(self):  # look at the changing of name
         for group in self.param_groups:
-            params_with_grad = []  # represents the theta, [theta_sh, theta_1,...theta_M] where M is the number of
-            # mini-batches
-
-            # task_dict = {}
-            # task_num = len(self.task_list)
-            # task_dict['task_num'] = task_num + 1  # increment the task id
-            # task_dict['theta'] = []
-            # task_dict['grads'] = []
-            task_theta=[]
-            task_grads=[]
+            # task_theta = []
+            task_grads = []
             for p in group['params']:
-                if p.grad is not None:
+                # each p represents the tensor object of one layer
+                if p.grad is not None:  # shape: [T,shape of parameters]
+                    task_grads.append(p.grad.clone())
 
-                    grads = p.grad  # shape: [T,shape of parameters]
-                    # self.task_dict['theta'].append(p)
-                    # task_dict['grads'].append(p.grad)
-                    task_grads.append(p.grad)
-                    task_theta.append(p)
+            # self.task_theta.append(task_theta)
+            self.grads_all_tasks.append(task_grads)
 
-
-
-            self.task_theta.append(task_grads)
-            self.task_grads.append(task_theta)
-
-
-    def frank_wolf_solver(self):
+    def step(self, closure=None):
         """
-        Args:
-            grads: list with each element represent grads of parameters for a mini batch.
-            group_param: dictionary from which learning rate, number of tasks and total number of iterations extracted.
-
-        Returns:
-            Tensor of t-dimensional representing alpha, with t being the number of tasks.
+        Updates the Parameters using FrankWolfe method.
         """
 
         lr = self.param_groups[0]['lr']
-        task_num = self.param_groups[0]['batch_size']
-        max_iter = self.param_groups[0]['max_iter']
-        grads = self.task_grads  # each element contains all grads for every layer for each mini batch
+        # task_num = self.batch_count
+        alpha = self.frankwolfsolver()
+        gdash_list = utilities.sum_scaled_product(self.grads_all_tasks, alpha)
 
-        alpha = torch.ones(task_num)  # shape [1,T]
-        alpha = torch.div(alpha, task_num)  # step 7 of algorithm 2.
-        m = list()
+        update_values = []
+        for layered_index in range(len(gdash_list)):
+            update_values.append(torch.mul(gdash_list[layered_index], lr))
 
-        # for index_i in range(task_num-1):
-        #     m.append(torch.mul(grads[index_i], grads[(index_i+1):]))
-        #
-        # M = torch.stack(m)  # step 8
 
-        # after expanding step 10
-        gdash = {}
+        for index in range(len(self.param_groups[0]['params'])):
 
-        for index in range(task_num):
-            for index_grad in range(len(grads[index])):
-                if gdash.__contains__(index_grad):
-                    gdash[index_grad] += torch.mul(alpha[index], grads[index][index_grad])
-                else:
-                    gdash[index_grad] = torch.mul(alpha[index], grads[index][index_grad])
+            self.param_groups[0]['params'][index] = torch.sub(self.param_groups[0]['params'][index],
+                                                              update_values[index])
 
-        task_t = []
-        # there are task_num number of gradients in grads list. But gdash only has as many elements as there are layers.
-        for index_task in range(task_num):
-            for index_grad in range(len(gdash)):
-                task_t.append(torch.matmul(grads[index_task][index_grad].T, gdash[index_grad]))  # shape [1,T]
-
-        minimum_tensor = torch.kthvalue(task_t, 1)  # step 10
-        gamma_chosen = 1000
-        count_iter = 0
-        while gamma_chosen > 0.1 or count_iter < max_iter:
-            t_chosen = minimum_tensor.indices.item()  # step 10, getting the index from kthvalue method.
-            theta_dash = torch.dot(alpha, torch.Tensor(grads))
-            theta = grads[t_chosen]
-            gamma_t = self.find_gamma(theta_dash, theta)  # step 11
-            tmp = torch.sum(torch.mul(1 - gamma_t, theta_dash), torch.mul(theta, gamma_t))
-
-            gamma_chosen = torch.square(tmp)  # refer to expansion of step 11
-            unit_chosen = torch.zeros(size=task_num)
-            unit_chosen[t_chosen] = 1
-            alpha = torch.sum(torch.mul(alpha, (1-gamma_chosen)), torch.mul((gamma_chosen, unit_chosen)))
-
-        return alpha
-
-    def find_gamma(self, theta_dash: torch.tensor, theta: torch.tensor):
+    def frankwolfsolver(self) -> torch.tensor:
         """
-        Args:
-            theta_dash: tensor [1,shape of neural network]
-            theta: tensor [shape of neural network]
+        Compute FrankWolf Solver as referenced in Algorithm 2.
 
         Returns:
-            0d tensor
+            Tensor of t-dimensional representing alpha, with t being the number of tasks.
+
         """
-        if torch.dot(torch.transpose(theta), theta_dash) >= torch.dot(torch.transpose(theta), theta):
-            return 1
-        elif torch.dot(torch.transpose(theta), theta_dash) >= torch.mul(torch.transpose(theta_dash), theta_dash):
-            return 0
-        else:
-            return torch.div(torch.mul(torch.transpose(torch.sub(theta_dash, theta)), theta_dash),
-                             torch.square(torch.sub(theta, theta_dash)))
+        task_num = self.batch_count
+        max_iter = self.param_groups[0]['max_iter']
+        grads_tasks_list = self.grads_all_tasks  # each element contains all grads for every layer for each mini batch
+
+        alpha = torch.ones(task_num)  # shape [1,T], one alpha for each task for each batch
+        alpha = torch.div(alpha, task_num)  # step 7 of algorithm 2.
+        # calculated_gamma = 1000
+        count_iter = 0
+
+        while count_iter < max_iter:
+            task_t1 = []
+            count_iter += 1
+
+            # after expanding step 10
+            gdash_layered_list = utilities.sum_scaled_product(grads_tasks_list, alpha)
+
+            # step 10
+            for index_task in range(task_num):
+                g_list = grads_tasks_list[index_task]
+                sum_product = utilities.product_grads(g_list, gdash_layered_list)
+                task_t1.append(sum_product)
+
+            minimum_tensor = torch.kthvalue(torch.tensor(task_t1), 1)  # step 10
+            t_chosen = minimum_tensor.indices.item()  # step 10, getting the index from kthvalue method.
+
+            # step 11
+            g_list_chosen = grads_tasks_list[t_chosen]  # this g is for a particular task, chosen by t_chosen
+            calculated_gamma = utilities.find_gamma(gdash_layered_list, g_list_chosen)  # step 11
+
+            # step 11 ends here
+            if calculated_gamma <= 0.0001:
+                return alpha
+
+            alpha = torch.mul(alpha, (1 - calculated_gamma))  # step 12 first part
+            alpha[t_chosen] += calculated_gamma  # step 12 second part
+
+        return alpha
