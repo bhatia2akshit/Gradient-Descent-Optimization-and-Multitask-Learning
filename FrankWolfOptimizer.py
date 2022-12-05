@@ -4,15 +4,17 @@ import utilities
 
 
 class FrankWolfOptimizer(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3, batch_count=1, batch_size=8, max_iter=10, ):
+    def __init__(self, params, device, lr=0.01, batch_count=1, batch_size=8, max_iter=10, ):
         """
             params: list of parameters that are updated (usually a list of tensor objects is given)
+            device: type of device, GPU or CPU
             lr: float: learning rate
             batch_count: int: number of batches (tasks)
             batch_size: int: number of instances in a batch (task)
             max_iter: int: total number of iterations after which FrankWolfe method is stopped.
         """
 
+        print(lr)
         if lr < 0:
             raise ValueError('lr must be greater than or equal to 0.')
         defaults = dict(lr=lr, max_iter=max_iter)
@@ -23,6 +25,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         self.batch_count = batch_count
         self.batch_size = batch_size
         self.batch_counter = 0  # keeps track of which batch is it.
+        self.device = device
 
         super(FrankWolfOptimizer, self).__init__(params, defaults)
 
@@ -52,9 +55,8 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         for layered_index in range(len(gdash_list)):
             update_values.append(torch.mul(gdash_list[layered_index], lr))
 
-
         for index in range(len(self.param_groups[0]['params'])):
-            tmp=self.param_groups[0]['params'][index].data
+            tmp = self.param_groups[0]['params'][index].data
             self.param_groups[0]['params'][index].data = torch.sub(tmp, update_values[index])
 
     def frankwolfsolver(self) -> torch.tensor:
@@ -72,6 +74,7 @@ class FrankWolfOptimizer(torch.optim.Optimizer):
         alpha = torch.ones(task_num)  # shape [1,T], one alpha for each task for each batch
         alpha = torch.div(alpha, task_num)  # step 7 of algorithm 2.
         # calculated_gamma = 1000
+        alpha = alpha.to(device=self.device)
         count_iter = 0
 
         while count_iter < max_iter:
