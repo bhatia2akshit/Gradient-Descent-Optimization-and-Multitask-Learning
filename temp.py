@@ -4,9 +4,9 @@ import torchvision
 from torchvision.transforms import ToTensor
 import torch.nn as nn
 import math
-# from FrankWolfOptimizer_new import FrankWolfOptimizer
+import pickle
 from FrankWolfOptimizer import FrankWolfOptimizer
-from Trainer_Tester import NeuralNetwork, train, test
+from trainer_tester import TrainTester
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -29,17 +29,39 @@ data_loader_test = torch.utils.data.DataLoader(image_data_test,
                                           shuffle=True,
                                           )
 
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super(NeuralNetwork, self).__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(28 * 28, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 10)
+        )
+
+    def forward(self, x):
+        x = self.flatten(x)
+        logits = self.linear_relu_stack(x)
+        return logits
+
 def main():
     modl = NeuralNetwork()
     loss = nn.CrossEntropyLoss()
     optim = FrankWolfOptimizer(modl.parameters(), device, lr=0.01, batch_count=batch_count, batch_size=batch_size,
                                max_iter=100)
-    epochs = 200
+    train_test = TrainTester(device)
+    epochs = 1
+
     for t in range(epochs):
-        # print(f"Epoch {t+1}\n-------------------------------")
-        train(data_loader_train, modl, loss, optim, device)
-        test(data_loader_test, modl, loss, device)
+        print(f"Epoch {t+1}\n-------------------------------")
+        train_test.train(data_loader_train, modl, loss, optim)
+        train_test.test(data_loader_test, modl, loss)
 
-        print(f'The epoch {t} is finished')
-
+        print(f'The epoch {t+1} is finished')
+    dict_stats = {'accuracy_train': train_test.train_accuracy_list, 'loss_train': train_test.train_loss_list,
+                  'accuracy_test': train_test.test_accuracy_list, 'loss_test': train_test.test_loss_list}
+    pickle.dump(dict_stats, open('./stats_saved.pkl','wb'))
 main()
