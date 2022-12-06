@@ -53,7 +53,7 @@ def main():
     optim = FrankWolfOptimizer(modl.parameters(), device, lr=0.01, batch_count=batch_count, batch_size=batch_size,
                                max_iter=100)
     train_test = TrainTester(device)
-    epochs = 1
+    epochs = 300
 
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
@@ -64,4 +64,5 @@ def main():
     dict_stats = {'accuracy_train': train_test.train_accuracy_list, 'loss_train': train_test.train_loss_list,
                   'accuracy_test': train_test.test_accuracy_list, 'loss_test': train_test.test_loss_list}
     pickle.dump(dict_stats, open('./stats_saved.pkl','wb'))
-main()
+    return dict_stats
+dict_stats_frank = main()

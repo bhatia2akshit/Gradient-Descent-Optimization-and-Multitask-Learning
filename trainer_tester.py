@@ -30,7 +30,8 @@ class TrainTester:
             train_loss += current_loss
             correct += (pred.argmax(1) == y).type(torch.float).sum().item()
             loss_value.backward()
-            optimizer.collect_grads()  # it appends gradients to theta parameter but doesn't call frankwolf method.
+            if str(optimizer.__class__) == "<class 'FrankWolfOptimizer.FrankWolfOptimizer'>":
+                optimizer.collect_grads()  # it appends gradients to theta parameter but doesn't call frankwolf method.
             optimizer.zero_grad()
 
         train_loss /= batch_count  # average loss per epoch.
@@ -58,5 +59,5 @@ class TrainTester:
         test_loss /= batch_count  # average test loss per epoch.
         self.test_loss_list.append(test_loss)
         correct /= size  # average test accuracy per epoch.
-        self.train_accuracy_list.append(correct*100)
+        self.test_accuracy_list.append(correct*100)
         print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
